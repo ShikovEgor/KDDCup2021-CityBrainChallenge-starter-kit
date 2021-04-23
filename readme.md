@@ -11,6 +11,9 @@ If your operating system is Windows and you have set `git config --global core.a
 
 So please change cfg/simulator.cfg from CRLF to LF after cloning this repo.
 
+Добавил в образ torch_geometric, jupyter. Новый образ можно получить следующей командой:
+docker push shikovegor/city_brain_my:tagname
+
 
 run_d_back.sh - запустить образ в бэкграунде
 
