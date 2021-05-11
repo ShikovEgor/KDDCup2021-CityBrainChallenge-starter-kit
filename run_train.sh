@@ -1,0 +1,1 @@
+python3 train_dqn_example.py --output_dir "out" --input_dir "agent" --sim_cfg './cfg/simulator.cfg' --episodes 10
