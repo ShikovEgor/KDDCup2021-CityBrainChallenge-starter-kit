@@ -256,6 +256,7 @@ def train(agent_spec, simulator_cfg_file, gym_cfg):
     total_decision_num = 0
     env.set_log(0)
     env.set_warning(0)
+
     # agent.load_model(args.save_dir, 199)
 
     # The main loop
@@ -361,12 +362,12 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg):
     logger.info("\n")
     logger.info("*" * 40)
 
-    gym_configs = gym_cfg.cfg
+    gym_configs = gym_cfg.gym_cfg().cfg
     simulator_configs = read_config(simulator_cfg_file)
     env = gym.make(
         'CBEngine-v0',
         simulator_cfg_file=simulator_cfg_file,
-        thread_num=1,
+        thread_num=16,
         gym_dict=gym_configs
     )
     scenario = [
@@ -387,8 +388,12 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg):
     agent = agent_spec[scenario[0]]
     agent.load_agent_list(agent_id_list)
 
+    # env.set_log(0 )
+    # env.set_warning(0 )
+
     env.set_log(1)
-    env.set_warning(1)
+    env.set_warning(0)
+
     agent.epsilon = 0
 
     step = 0
@@ -401,6 +406,7 @@ def run_simulation(agent_spec, simulator_cfg_file, gym_cfg):
             'info': infos
         }
         actions = agent.act(all_info)
+        # print('step ',  step,' ', actions)
         observations, rewards, dones, infos = env.step(actions)
         for agent_id in agent_id_list:
             if (dones[agent_id]):
