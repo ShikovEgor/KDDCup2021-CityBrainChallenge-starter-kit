@@ -14,6 +14,12 @@ import gym
 import numpy as np
 from datetime import datetime
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__file__)
+logger.setLevel(logging.INFO)
+
+gym.logger.setLevel(gym.logger.ERROR)
+
 
 N_OBS = 24
 N_ACTIONS = 4
