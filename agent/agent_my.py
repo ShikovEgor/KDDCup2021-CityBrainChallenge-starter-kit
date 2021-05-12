@@ -173,10 +173,11 @@ class TestAgent:
         nhid2 = 32
 
         self.env_preproc = PreprocEnv(self.agent_list)  
-        feat_prepr = NodeInit(self.n_agnts, self.n_inter-self.n_agnts, nhid1, ptype = 'conv', sharing=False) 
-        self.pi = CategoricalActor(feat_prepr,
+        feat_prepr1 = NodeInit(self.n_agnts, self.n_inter-self.n_agnts, nhid1, ptype = 'conv', sharing=False) 
+        feat_prepr2 = NodeInit(self.n_agnts, self.n_inter-self.n_agnts, nhid1, ptype = 'conv', sharing=False) 
+        self.pi = CategoricalActor(feat_prepr1,
             TempGraphNet(self.edge_index, self.n_agnts, self.n_inter, nhid1, nhid2, self.max_phase))
-        self.v  = Critic(feat_prepr,
+        self.v  = Critic(feat_prepr2,
             TempGraphNet(self.edge_index, self.n_agnts, self.n_inter, nhid1, nhid2, 1))
 
 
