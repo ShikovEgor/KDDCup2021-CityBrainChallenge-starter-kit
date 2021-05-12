@@ -24,6 +24,9 @@ class NodeInit(nn.Module):
         self.n_agent = n_agent
         self.dim = dim
         self.n_non_agent = n_non_agent
+        self.phase_emb = nn.Embedding(4, dim)
+        self.lin_agg_ph_o = nn.Sequential(nn.Linear(dim*2, dim), nn.ReLU(inplace=True))
+        
         if ptype == 'conv':
             c1 = nn.Conv2d(1, 8, (4, 2),padding=(1,1 ))
             p1 = nn.MaxPool2d(2, padding = 1)
@@ -49,7 +52,7 @@ class NodeInit(nn.Module):
         with torch.no_grad():
             self.h_feat = torch.zeros((n_agent+n_non_agent, dim))
 
-    def res(self):
+    def reset(self):
         with torch.no_grad():
             self.h_feat = torch.zeros((self.n_agent+self.n_non_agent,  self.dim))
     
@@ -62,15 +65,18 @@ class NodeInit(nn.Module):
         return self.mod(x.view(-1, 8, 3).mean(dim=2))
         
     def forward(self, x):
-        # with torch.no_grad():
-        #     h_feat = self.h_feat
         h_feat = torch.zeros((self.n_agent+self.n_non_agent,  self.dim))
-        h_feat[:22] = self.prepr(x)
+
+        obs_features = self.prepr(x[:, :24])
+        ph_features = self.phase_emb(x[:, 24].to(dtype=torch.long))
+        ag_features = self.lin_agg_ph_o(  torch.cat( ( obs_features,ph_features), dim=1)    )
+        h_feat[:22] = ag_features
         return h_feat + self.h_init
 
-class Net(torch.nn.Module):
+
+class TempGraphNet(torch.nn.Module):
     def __init__(self, edge_index, n_agnts,n_inter,  dim_in, filters, n_phase):
-        super(Net, self).__init__()
+        super(TempGraphNet, self).__init__()
         
         self.recurrent = TGCN(in_channels = dim_in, out_channels = filters)
         # self.recurrent = A3TGCN(in_channels = node_features, out_channels = filters, periods = 12)
@@ -86,29 +92,25 @@ class Net(torch.nn.Module):
             self.state = torch.zeros(self.n_inter, self.filters)
 
     def forward(self, x):
-        # print(tt.shape, x.shape, edge_index.shape, self.no_signal.shape)
-        # print(x.shape, self.state.shape)
-
         self.state = self.recurrent(X = x, edge_index = self.edge_index, H = self.state)  
         y = F.relu(self.state)
         y = self.linear(y)
         # return F.softmax(h)
         return y[:self.n_agnts,:]
-    
+
+
 class CategoricalActor(nn.Module):
-    def __init__(self, net):
+    def __init__(self, feat_prepr, net):
         super().__init__()
         self.logits_net = net
-#         self.logits_net = Net(n_agnts, dim_in, hidden_size,act_dim)
+        self.feat_prepr = feat_prepr
         
     def _distribution(self, obs):
-        # print('obs',obs.shape)
-        logits = self.logits_net(obs)
+        x = self.feat_prepr(obs)
+        logits = self.logits_net(x)
         return Categorical(logits=logits)
 
     def _log_prob_from_distribution(self, pi, act):
-        # print('act',act.shape)
-
         return pi.log_prob(act).mean()
     
     def forward(self, obs, act=None):
@@ -118,15 +120,15 @@ class CategoricalActor(nn.Module):
             logp_a = self._log_prob_from_distribution(pi, act)
         return pi, logp_a
     
-# def __init__(self, n_agnts, dim_in, hidden_size):
 class Critic(nn.Module):
-    def __init__(self, net):
+    def __init__(self, feat_prepr, net):
         super().__init__()
+        self.feat_prepr = feat_prepr
         self.v_net = net
-#         self.v_net = Net(n_agnts, dim_in, hidden_size,1)
 
     def forward(self, obs):
-        return self.v_net(obs).mean()
+        x = self.feat_prepr(obs)
+        return self.v_net(x).mean()
 
 class TestAgent:
     def __init__(self):
@@ -170,26 +172,20 @@ class TestAgent:
         
         nhid1 = 32
         nhid2 = 32
-        # self.net = Net(nhid1, nhid2, self.max_phase)
-        self.feat_prepr = NodeInit(self.n_agnts, self.n_inter-self.n_agnts, nhid1, ptype = 'conv', sharing=False)
-        
-       
-        self.pi = CategoricalActor(
-            Net(self.edge_index, self.n_agnts, self.n_inter, nhid1, nhid2, self.max_phase))
-        self.v  = Critic(
-            Net(self.edge_index, self.n_agnts, self.n_inter, nhid1, nhid2, 1))
+
+        feat_prepr = NodeInit(self.n_agnts, self.n_inter-self.n_agnts, nhid1, ptype = 'conv', sharing=False) 
+        self.pi = CategoricalActor(feat_prepr,
+            TempGraphNet(self.edge_index, self.n_agnts, self.n_inter, nhid1, nhid2, self.max_phase))
+        self.v  = Critic(feat_prepr,
+            TempGraphNet(self.edge_index, self.n_agnts, self.n_inter, nhid1, nhid2, 1))
 
 
     def step(self, obs):
         with torch.no_grad():
-            x = self.feat_prepr(obs)
-#             self.action_weight = self.net(x, self.edge_index)[:self.n_agnts]
-#             self.curr_phase = torch.multinomial(self.action_weight[:self.n_agnts,:], 1)+1
-            
-            pi = self.pi._distribution(x)
+            pi = self.pi._distribution(obs)
             a = pi.sample()
             logp_a = self.pi._log_prob_from_distribution(pi, a)
-            v = self.v(x)
+            v = self.v(obs)
         return a, v, logp_a
 
 
@@ -199,6 +195,10 @@ class TestAgent:
         a, _, _ = self.step(obs)
         return self.env_preproc.act_tensor_to_env(a)
 
+    def reset(self):
+        self.pi.logits_net.reset_state()
+        self.v.v_net.reset_state()   
+        self.env_preproc.reset_state()     
 
 scenario_dirs = [
     "test"
